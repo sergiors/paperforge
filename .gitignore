@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.aws-sam
+.pytest_cache
+.venv
+.ruff_cache
+.DS_Store
+.coverage
+__pycache__
+.python-version
+requirements.txt
+.meili_data/
+.dynamodb_volume/
+.elastic_volume/
+.env
+
+compose.yaml
