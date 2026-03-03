@@ -1,10 +1,10 @@
 import os
 import tempfile
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from jinja2 import Template
@@ -12,7 +12,10 @@ from pydantic import AnyUrl, BaseModel, Field, UrlConstraints
 from starlette.background import BackgroundTask
 from weasyprint import HTML
 
-from ..boto3clients import S3Client, get_s3_client
+if TYPE_CHECKING:
+    from types_boto3_s3.client import S3Client
+else:
+    S3Client = object
 
 router = APIRouter()
 
@@ -26,10 +29,14 @@ class PDFResponse(FileResponse):
     media_type = 'application/pdf'
 
 
+def get_s3(request: Request) -> S3Client:
+    return request.app.state.s3
+
+
 @router.post('/render', response_class=PDFResponse)
 async def render(
     render_request: Annotated[RenderRequest, Body()],
-    s3_client: S3Client = Depends(get_s3_client),
+    s3_client: S3Client = Depends(get_s3),
 ):
     bucket, key = _parse_s3_uri(str(render_request.template))
     vars_ = render_request.vars_ or {}
@@ -62,7 +69,7 @@ def _parse_s3_uri(url: str) -> tuple[str, str]:
 def _generate_pdf_to_file(html: str) -> str:
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-            HTML(string=html).write_pdf(tmp.name)
+            HTML(string=html, base_url='').write_pdf(tmp.name)
             return tmp.name
     except Exception as e:
         raise RuntimeError('PDF generation failed') from e
