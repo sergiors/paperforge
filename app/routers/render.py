@@ -1,13 +1,15 @@
-import io
+import os
+import tempfile
 from typing import Annotated
 from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
 from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse
 from jinja2 import Template
 from pydantic import AnyUrl, BaseModel, Field, UrlConstraints
+from starlette.background import BackgroundTask
 from weasyprint import HTML
 
 from ..boto3clients import S3Client, get_s3_client
@@ -20,7 +22,11 @@ class RenderRequest(BaseModel):
     vars_: dict[str, str] | None = Field(None, alias='vars')
 
 
-@router.post('/render', response_class=StreamingResponse)
+class PDFResponse(FileResponse):
+    media_type = 'application/pdf'
+
+
+@router.post('/render', response_class=PDFResponse)
 async def render(
     render_request: Annotated[RenderRequest, Body()],
     s3_client: S3Client = Depends(get_s3_client),
@@ -34,20 +40,17 @@ async def render(
         raise HTTPException(status_code=404, detail='Template not found') from e
 
     template_html = obj['Body'].read().decode('utf-8')
-    template = Template(template_html)
-    html_content = template.render(**vars_)
+    html_content = Template(template_html).render(**vars_)
 
     try:
-        pdf_bytes = await run_in_threadpool(_generate_pdf, html_content)
+        tmpfile = await run_in_threadpool(_generate_pdf_to_file, html_content)
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
-    return StreamingResponse(
-        io.BytesIO(pdf_bytes),
-        media_type='application/pdf',
-        headers={
-            'Content-Disposition': 'attachment; filename="filename.pdf"',
-        },
+    return PDFResponse(
+        tmpfile,
+        filename='filename.pdf',
+        background=BackgroundTask(_cleanup_file, tmpfile),
     )
 
 
@@ -56,13 +59,17 @@ def _parse_s3_uri(url: str) -> tuple[str, str]:
     return parsed.netloc, parsed.path.lstrip('/')
 
 
-def _generate_pdf(html: str) -> bytes:
+def _generate_pdf_to_file(html: str) -> str:
     try:
-        pdf = HTML(string=html, base_url='').write_pdf()
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
+            HTML(string=html).write_pdf(tmp.name)
+            return tmp.name
     except Exception as e:
         raise RuntimeError('PDF generation failed') from e
 
-    if pdf is None:
-        raise RuntimeError('PDF generation returned None')
 
-    return pdf
+def _cleanup_file(path: str) -> None:
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
