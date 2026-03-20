@@ -1,12 +1,9 @@
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from pydantic import AnyUrl, BaseModel, UrlConstraints
 
-if TYPE_CHECKING:
-    from types_boto3_s3.client import S3Client
-else:
-    S3Client = object
+from ..deps import S3Client, get_s3
 
 router = APIRouter()
 
@@ -19,10 +16,6 @@ class PfxSignature(BaseModel):
 class SignRequest(BaseModel):
     pdf: Annotated[AnyUrl, UrlConstraints(allowed_schemes=['s3'])]
     signatures: list[PfxSignature]
-
-
-def get_s3(request: Request) -> S3Client:
-    return request.app.state.s3
 
 
 @router.post('/sign')

@@ -1,18 +1,17 @@
 import logging
 import os
-import importlib
 from typing import Generator
 
 import app.main as app_main
 import boto3
 import pytest
+from app import deps
 from app.models import Pdf
 from app.routers.admin.events import _StreamExhausted
 from fastapi.testclient import TestClient
 from moto import mock_aws
 
 app = app_main.app
-render_module = importlib.import_module('app.routers.render')
 
 
 # https://docs.pytest.org/en/7.1.x/reference/reference.html#pytest.hookspec.pytest_configure
@@ -132,7 +131,7 @@ def test_client(
     async def setup(*args, **kwargs) -> None:
         return None
 
-    async def get_session_override():
+    async def get_db_override():
         async with session_factory() as session:
             yield session
 
@@ -142,6 +141,6 @@ def test_client(
     with TestClient(app) as client:
         client.app.state.s3 = s3_client  # type: ignore
         client.app.state.engine = engine  # type: ignore
-        client.app.dependency_overrides[render_module.get_session] = get_session_override
+        client.app.dependency_overrides[deps.get_db] = get_db_override
         yield client
         client.app.dependency_overrides.clear()

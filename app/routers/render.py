@@ -1,27 +1,21 @@
 import os
 import tempfile
 import uuid
-from collections.abc import AsyncIterator
-from typing import TYPE_CHECKING, Annotated
+from typing import Annotated
 from urllib.parse import urlparse
 
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from jinja2 import Template
 from pydantic import AnyUrl, BaseModel, Field, UrlConstraints
-from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.background import BackgroundTask
 from weasyprint import HTML
 
+from ..deps import S3Client, get_db, get_s3
 from ..models import Pdf
-
-if TYPE_CHECKING:
-    from types_boto3_s3.client import S3Client
-else:
-    S3Client = object
 
 router = APIRouter()
 
@@ -35,22 +29,11 @@ class PDFResponse(FileResponse):
     media_type = 'application/pdf'
 
 
-def get_s3(request: Request) -> S3Client:
-    return request.app.state.s3
-
-
-async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
-    async with AsyncSession(
-        request.app.state.engine, expire_on_commit=False
-    ) as session:
-        yield session
-
-
 @router.post('/render', response_class=PDFResponse)
 async def render(
     render_request: Annotated[RenderRequest, Body()],
     s3_client: S3Client = Depends(get_s3),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     job_id = uuid.uuid7()
     bucket, key = _parse_s3_uri(str(render_request.template))

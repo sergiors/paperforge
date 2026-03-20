@@ -4,24 +4,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.sse import EventSourceResponse
-from sqlalchemy import PoolProxiedConnection
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine
+
+from ...deps import get_engine
 
 router = APIRouter()
 
 
 class _StreamExhausted:
     pass
-
-
-def _get_engine(request: Request) -> AsyncEngine:
-    return request.app.state.engine
-
-
-async def _get_raw_connection(
-    connection: AsyncConnection,
-) -> PoolProxiedConnection:
-    return await connection.get_raw_connection()
 
 
 @asynccontextmanager
@@ -33,7 +24,7 @@ async def subscribe_to_channel(
     notifications: asyncio.Queue[str | _StreamExhausted] = asyncio.Queue()
 
     async with engine.connect() as connection:
-        raw_connection = await _get_raw_connection(connection)
+        raw_connection = await connection.get_raw_connection()
         driver_connection = raw_connection.driver_connection
         assert driver_connection is not None
 
@@ -59,7 +50,7 @@ async def subscribe_to_channel(
 @router.get('/events', response_class=EventSourceResponse)
 async def events(
     request: Request,
-    engine: AsyncEngine = Depends(_get_engine),
+    engine: AsyncEngine = Depends(get_engine),
 ) -> AsyncIterable[dict]:
     async with subscribe_to_channel(engine, 'pdf-status') as notifications:
         while True:
