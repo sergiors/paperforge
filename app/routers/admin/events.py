@@ -2,9 +2,10 @@ import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
 from contextlib import asynccontextmanager
 
-from asyncpg import Connection, Pool
 from fastapi import APIRouter, Depends, Request
 from fastapi.sse import EventSourceResponse
+from sqlalchemy import PoolProxiedConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 router = APIRouter()
 
@@ -13,18 +14,31 @@ class _StreamExhausted:
     pass
 
 
+def _get_engine(request: Request) -> AsyncEngine:
+    return request.app.state.engine
+
+
+async def _get_raw_connection(
+    connection: AsyncConnection,
+) -> PoolProxiedConnection:
+    return await connection.get_raw_connection()
+
+
 @asynccontextmanager
 async def subscribe_to_channel(
-    pg_pool: Pool,
+    engine: AsyncEngine,
     channel: str,
 ) -> AsyncIterator[asyncio.Queue[str | _StreamExhausted]]:
-    notifications: asyncio.Queue[str | _StreamExhausted] = asyncio.Queue()
     listener_registered = False
+    notifications: asyncio.Queue[str | _StreamExhausted] = asyncio.Queue()
 
-    async with pg_pool.acquire() as connection:
+    async with engine.connect() as connection:
+        raw_connection = await _get_raw_connection(connection)
+        driver_connection = raw_connection.driver_connection
+        assert driver_connection is not None
 
         def listener(
-            _connection: Connection,
+            _connection,
             _pid: int,
             _channel: str,
             payload: str,
@@ -32,26 +46,22 @@ async def subscribe_to_channel(
             notifications.put_nowait(payload)
 
         try:
-            await connection.add_listener(channel, listener)
+            await driver_connection.add_listener(channel, listener)
             listener_registered = True
             yield notifications
         finally:
             notifications.put_nowait(_StreamExhausted())
 
             if listener_registered:
-                await connection.remove_listener(channel, listener)
-
-
-def get_pg_pool(request: Request) -> Pool:
-    return request.app.state.pg_pool
+                await driver_connection.remove_listener(channel, listener)
 
 
 @router.get('/events', response_class=EventSourceResponse)
 async def events(
     request: Request,
-    pg_pool: Pool = Depends(get_pg_pool),
+    engine: AsyncEngine = Depends(_get_engine),
 ) -> AsyncIterable[dict]:
-    async with subscribe_to_channel(pg_pool, 'pdf-status') as notifications:
+    async with subscribe_to_channel(engine, 'pdf-status') as notifications:
         while True:
             if await request.is_disconnected():
                 break
