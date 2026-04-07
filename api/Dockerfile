@@ -5,11 +5,12 @@ RUN apk add --no-cache font-liberation font-liberation-sans-narrow ttf-linux-lib
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-COPY pyproject.toml uv.lock /code/
-
 WORKDIR /code
+COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-cache --no-dev
 
-COPY app/ /code/app/
+COPY app ./app
 
-CMD ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80", "--workers", "4"]
+EXPOSE 8000
+
+CMD ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

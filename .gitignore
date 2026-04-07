@@ -1,7 +1,6 @@
 .DS_Store
 .env
 /node_modules/
-compose.yaml
 
 # Python-generated files
 __pycache__/

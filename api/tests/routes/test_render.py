@@ -2,7 +2,7 @@ import importlib
 from http import HTTPStatus
 from pathlib import Path
 
-from api.models import Pdf
+from app.models import Pdf
 from fastapi.testclient import TestClient
 
 
@@ -67,7 +67,7 @@ def test_render_tracks_job_statuses(
 def test_render_executes_cleanup_after_response(
     monkeypatch, test_client: TestClient, s3_client
 ):
-    route = importlib.import_module('api.routers.render')
+    route = importlib.import_module('app.routers.pdf.render')
     called = False
 
     def cleanup_file(path):

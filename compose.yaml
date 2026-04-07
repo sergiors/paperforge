@@ -1,0 +1,46 @@
+services:
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    platform: linux/amd64
+    ports:
+      - 80:80
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - client
+      - server
+
+  server:
+    build:
+      context: ./api
+    platform: linux/amd64
+    environment:
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_SECRET_ACCESS_KEY:-sa-east-1}
+      DATABASE_URL: postgresql+asyncpg://user:password@postgres:5432/paperforge
+    depends_on:
+      - postgres
+
+  client:
+    build:
+      context: ./app
+    platform: linux/amd64
+    depends_on:
+      - server
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: paperforge
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ./.postgres_data15:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d paperforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
