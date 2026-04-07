@@ -4,8 +4,8 @@ from fastapi.testclient import TestClient
 
 
 def test_sign(test_client: TestClient):
-    req = test_client.post(
-        '/sign',
+    request = test_client.post(
+        '/pdf/sign',
         json={
             'pdf': 's3://bucket/template.pdf',
             'signatures': [
@@ -16,4 +16,4 @@ def test_sign(test_client: TestClient):
             ],
         },
     )
-    assert req.status_code == HTTPStatus.OK
+    assert request.status_code == HTTPStatus.OK

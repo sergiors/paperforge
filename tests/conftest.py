@@ -2,12 +2,12 @@ import logging
 import os
 from typing import Generator
 
-import app.main as app_main
+import api.main as app_main
 import boto3
 import pytest
-from app import deps
-from app.models import Pdf
-from app.routers.admin.events import _StreamExhausted
+from api import deps
+from api.models import Pdf
+from api.routers.admin.events import _StreamExhausted
 from fastapi.testclient import TestClient
 from moto import mock_aws
 

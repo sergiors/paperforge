@@ -5,8 +5,8 @@ import boto3
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from .routers import render, sign
 from .routers.admin import events as admin_events
+from .routers.pdf import render, sign
 from .schema import setup
 
 
@@ -22,8 +22,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(debug=True, lifespan=lifespan)
 app.include_router(admin_events, prefix='/admin')
-app.include_router(render)
-app.include_router(sign)
+app.include_router(render, prefix='/pdf')
+app.include_router(sign, prefix='/pdf')
 
 
 @app.get('/health')

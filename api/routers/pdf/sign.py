@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from pydantic import AnyUrl, BaseModel, UrlConstraints
 
-from ..deps import S3Client, get_s3
+from ...deps import S3Client, get_s3
 
 router = APIRouter()
 

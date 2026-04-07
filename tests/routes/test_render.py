@@ -2,7 +2,7 @@ import importlib
 from http import HTTPStatus
 from pathlib import Path
 
-from app.models import Pdf
+from api.models import Pdf
 from fastapi.testclient import TestClient
 
 
@@ -17,7 +17,7 @@ def test_render_returns_pdf_when_template_exists(test_client: TestClient, s3_cli
     )
 
     response = test_client.post(
-        '/render',
+        '/pdf/render',
         json={
             'template': 's3://bucket/template.html',
             'vars': {'name': 'John'},
@@ -34,7 +34,9 @@ def test_render_returns_pdf_when_template_exists(test_client: TestClient, s3_cli
     assert len(response.content) > 100
 
 
-def test_render_tracks_job_statuses(test_client: TestClient, s3_client, session_factory):
+def test_render_tracks_job_statuses(
+    test_client: TestClient, s3_client, session_factory
+):
     s3_client.put_object(
         Bucket='bucket',
         Key='template.html',
@@ -42,7 +44,7 @@ def test_render_tracks_job_statuses(test_client: TestClient, s3_client, session_
     )
 
     response = test_client.post(
-        '/render',
+        '/pdf/render',
         json={
             'template': 's3://bucket/template.html',
             'vars': {'name': 'John'},
@@ -65,7 +67,7 @@ def test_render_tracks_job_statuses(test_client: TestClient, s3_client, session_
 def test_render_executes_cleanup_after_response(
     monkeypatch, test_client: TestClient, s3_client
 ):
-    route = importlib.import_module('app.routers.render')
+    route = importlib.import_module('api.routers.render')
     called = False
 
     def cleanup_file(path):
@@ -81,7 +83,7 @@ def test_render_executes_cleanup_after_response(
     )
 
     response = test_client.post(
-        '/render',
+        '/pdf/render',
         json={'template': 's3://bucket/template.html'},
     )
 
@@ -97,7 +99,7 @@ def test_render_returns_404_when_template_not_found(
     session_factory,
 ):
     req = test_client.post(
-        '/render',
+        '/pdf/render',
         json={
             'template': 's3://bucket/template.html',
             'vars': {'name': 'John'},

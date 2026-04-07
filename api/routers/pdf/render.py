@@ -14,8 +14,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from starlette.background import BackgroundTask
 from weasyprint import HTML
 
-from ..deps import S3Client, get_db, get_s3
-from ..models import Pdf
+from ...deps import S3Client, get_db, get_s3
+from ...models import Pdf
 
 router = APIRouter()
 
