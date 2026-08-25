@@ -2,6 +2,11 @@
 
 Paperforge is a lightweight and efficient API for generating PDF documents from HTML templates using Jinja2 and WeasyPrint. It also supports digitally signing PDFs using PKCS#12 (PFX) certificates.
 
+> **⚠️ Development Status**
+> This project is under active development. APIs, configuration formats, and
+> architecture decisions may change without prior notice. Use with caution in
+> production environments.
+
 To generate a PDF, send a `multipart/form-data` request to `POST /convert/html`.
 
 ```sh
@@ -15,3 +20,7 @@ curl \
 The uploaded HTML entry point **must** be named `index.html`. Additional files uploaded using the same `files` form field (such as CSS, images, and fonts) are available to the document using their relative paths.
 
 The endpoint returns the generated PDF with the `application/pdf` content type.
+
+## 📝 License
+
+GNU General Public License v3.0 - see [LICENSE](LICENSE.md) for details.
