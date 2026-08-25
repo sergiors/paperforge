@@ -1,15 +1,8 @@
-SERVER_IMAGE ?= paperforge-server
-CLIENT_IMAGE ?= paperforge-client
+SERVER_IMAGE ?= paperforge
 DOCKER_PLATFORM ?= linux/amd64
 
-
-build-server:
-	docker build --platform $(DOCKER_PLATFORM) -t $(SERVER_IMAGE) ./api
-
-build-client:
-	docker build --platform $(DOCKER_PLATFORM) -t $(CLIENT_IMAGE) ./app
-
-build: build-server build-client
+build:
+	docker build --platform $(DOCKER_PLATFORM) -t $(SERVER_IMAGE) .
 
 up:
 	docker compose up -d
