@@ -9,6 +9,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "weasyprint>=66.0",
     "pydantic>=2.12.5",
+    "pyhanko>=0.25.0",
 ]
 
 [dependency-groups]

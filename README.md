@@ -21,6 +21,23 @@ The uploaded HTML entry point **must** be named `index.html`. Additional files u
 
 The endpoint returns the generated PDF with the `application/pdf` content type.
 
+To digitally sign a PDF, send a `multipart/form-data` request to `POST /pdf/sign`.
+
+```sh
+curl \
+  --request POST http://localhost:8000/pdf/sign \
+  --form files=@document.pdf \
+  --form files=@company.p12 \
+  --form 'signers=[{"file":"company.p12","passphrase":"secret"}]' \
+  --output signed.pdf
+```
+
+Exactly one uploaded file must be a PDF document; the rest are the PKCS#12
+certificates referenced by the `signers` array. Signatures are applied
+sequentially in the order given.
+
+The endpoint returns the signed PDF with the `application/pdf` content type.
+
 ## 📝 License
 
 GNU General Public License v3.0 - see [LICENSE](LICENSE.md) for details.
