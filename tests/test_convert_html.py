@@ -2,7 +2,7 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
-from app.routers.convert import InvalidFilenameError, _convert_html_to_pdf
+from app.routers.convert_html import InvalidFilenameError, _convert_html_to_pdf
 from fastapi.testclient import TestClient
 
 
