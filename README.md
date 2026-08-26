@@ -7,11 +7,23 @@ Paperforge is a lightweight and efficient API for generating PDF documents from 
 > architecture decisions may change without prior notice. Use with caution in
 > production environments.
 
+## 🔐 Authentication
+
+Authentication is optional and disabled by default.
+
+- If the `API_KEY` environment variable is **not** configured, all requests are allowed.
+- If `API_KEY` is configured, every request must include the API key using the `Authorization` header with the Bearer scheme:
+
+```http
+Authorization: Bearer <your-api-key>
+```
+
 To generate a PDF, send a `multipart/form-data` request to `POST /convert/html`.
 
 ```sh
 curl \
   --request POST http://localhost:8000/convert/html \
+  --header "Authorization: Bearer my-secret-api-key" \
   --form files=@index.html \
   --form 'context={"name":"Sergio"}' \
   --output invoice.pdf
@@ -26,6 +38,7 @@ To digitally sign a PDF, send a `multipart/form-data` request to `POST /pdf/sign
 ```sh
 curl \
   --request POST http://localhost:8000/pdf/sign \
+  --header "Authorization: Bearer my-secret-api-key" \
   --form files=@document.pdf \
   --form files=@company.p12 \
   --form 'signers=[{"file":"company.p12","passphrase":"secret"}]' \

@@ -11,6 +11,11 @@ def setup_logging():
     logging.basicConfig(level=logging.INFO)
 
 
+@pytest.fixture(autouse=True)
+def clear_api_key(monkeypatch):
+    monkeypatch.delenv('API_KEY', raising=False)
+
+
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
     with TestClient(app) as test_client:

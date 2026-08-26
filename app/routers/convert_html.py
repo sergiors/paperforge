@@ -3,15 +3,17 @@ import logging
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 from weasyprint import HTML
 from weasyprint.urls import FatalURLFetchingError, URLFetcher
 
+from ..deps import verify_api_key
+
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 jinja_env = SandboxedEnvironment(undefined=StrictUndefined)
 
 
