@@ -1,8 +1,11 @@
+import io
 from http import HTTPStatus
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from pyhanko.pdf_utils.reader import PdfFileReader
+from pyhanko.sign.validation import validate_pdf_signature
 
 # Passphrase for tests/samples/sample.p12.
 PASSPHRASE = 'secret'
@@ -24,6 +27,11 @@ def _post(client: TestClient, files: list[tuple[str, bytes]], signers: str):
         files=[('files', (name, content)) for name, content in files],
         data={'signers': signers},
     )
+
+
+def _signature_statuses(pdf: bytes):
+    reader = PdfFileReader(io.BytesIO(pdf))
+    return [validate_pdf_signature(sig) for sig in reader.embedded_signatures]
 
 
 def test_sign_pdf_single_signer(client: TestClient, pdf: bytes, p12: bytes):
@@ -237,3 +245,47 @@ def test_sign_pdf_signer_missing_passphrase(client: TestClient, pdf: bytes, p12:
     # then the response is a 400 error
     assert response.status_code == HTTPStatus.BAD_REQUEST
     assert response.json() == {'error': 'Each signer must have a "passphrase" string.'}
+
+
+def test_sign_pdf_signature_is_valid(client: TestClient, pdf: bytes, p12: bytes):
+    # given a PDF and a PKCS#12 certificate
+    files = [('document.pdf', pdf), ('company.p12', p12)]
+
+    # and a signer referencing the certificate
+    signers = '[{"file": "company.p12", "passphrase": "secret"}]'
+
+    # when I send a POST request to /pdf/sign
+    response = _post(client, files, signers)
+
+    # then the response contains a valid signature
+    assert response.status_code == HTTPStatus.OK
+    statuses = _signature_statuses(response.content)
+    assert len(statuses) == 1
+    assert statuses[0].intact
+    assert statuses[0].valid
+
+
+def test_sign_pdf_multiple_signatures_are_valid(
+    client: TestClient, pdf: bytes, p12: bytes
+):
+    # given a PDF and two PKCS#12 certificates
+    files = [
+        ('document.pdf', pdf),
+        ('company.p12', p12),
+        ('manager.p12', p12),
+    ]
+
+    # and two signers applied in order
+    signers = (
+        '[{"file": "company.p12", "passphrase": "secret"},'
+        ' {"file": "manager.p12", "passphrase": "secret"}]'
+    )
+
+    # when I send a POST request to /pdf/sign
+    response = _post(client, files, signers)
+
+    # then the response contains two valid signatures
+    assert response.status_code == HTTPStatus.OK
+    statuses = _signature_statuses(response.content)
+    assert len(statuses) == 2
+    assert all(status.intact and status.valid for status in statuses)
