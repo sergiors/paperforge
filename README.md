@@ -1,39 +1,86 @@
-## Paperforge
+# Paperforge
 
-Paperforge is a lightweight and efficient API for generating PDF documents from HTML templates using Jinja2 and WeasyPrint. It also supports digitally signing PDFs using PKCS#12 (PFX) certificates.
+Paperforge is a lightweight, self-hosted HTTP API for generating and digitally signing PDF documents. It renders HTML templates with Jinja2, converts them to PDF with WeasyPrint, and applies digital signatures using PKCS#12 (PFX) certificates.
 
-> **⚠️ Development Status**
-> This project is under active development. APIs, configuration formats, and
-> architecture decisions may change without prior notice. Use with caution in
-> production environments.
+## Features
 
-## 🔐 Authentication
+- HTML to PDF conversion
+- Jinja2 template rendering
+- Multiple uploaded assets (CSS, images, fonts, etc.)
+- PDF digital signing
+- Multiple sequential signatures
+- Simple HTTP API
+- Docker-friendly
+- Optional API key authentication
 
-Authentication is optional and disabled by default.
+## Installation
 
-- If the `API_KEY` environment variable is **not** configured, all requests are allowed.
-- If `API_KEY` is configured, every request must include the API key using the `Authorization` header with the Bearer scheme:
+### Docker
 
-```http
-Authorization: Bearer <your-api-key>
+```sh
+docker build -t paperforge .
+docker run -p 8000:8000 paperforge
 ```
 
-To generate a PDF, send a `multipart/form-data` request to `POST /convert/html`.
+### Docker Compose
+
+```sh
+docker compose up -d
+```
+
+### Environment variables
+
+| Variable  | Description                                                                         |
+| --------- | ----------------------------------------------------------------------------------- |
+| `API_KEY` | Optional API key. When set, requests must include it in the `Authorization` header. |
+
+Authentication is disabled when `API_KEY` is not configured.
+
+## Authentication
+
+When `API_KEY` is configured, every request must include it as a Bearer token:
+
+```http
+Authorization: Bearer <API_KEY>
+```
+
+## API
+
+### Convert HTML to PDF
+
+```
+POST /convert/html
+```
+
+Converts an uploaded HTML document to PDF.
+
+The request is `multipart/form-data` with the following fields:
+
+- `files` (required) — one or more files. Exactly one must be named `index.html`; it is the document entry point. Additional files (CSS, images, fonts, etc.) are available by relative path.
+- `context` (optional) — a JSON object serialized as a string. When provided, `index.html` is rendered as a Jinja2 template using the object as its context.
 
 ```sh
 curl \
   --request POST http://localhost:8000/convert/html \
   --header "Authorization: Bearer my-secret-api-key" \
   --form files=@index.html \
-  --form 'context={"name":"Sergio"}' \
-  --output invoice.pdf
+  --form files=@style.css \
+  --form 'context={"name":"Sergio","company":"Paperforge"}' \
+  --output document.pdf
 ```
 
-The uploaded HTML entry point **must** be named `index.html`. Additional files uploaded using the same `files` form field (such as CSS, images, and fonts) are available to the document using their relative paths.
+### Sign PDF
 
-The endpoint returns the generated PDF with the `application/pdf` content type.
+```
+POST /pdf/sign
+```
 
-To digitally sign a PDF, send a `multipart/form-data` request to `POST /pdf/sign`.
+Digitally signs an uploaded PDF with one or more PKCS#12 certificates.
+
+The request is `multipart/form-data` with the following fields:
+
+- `files` (required) — exactly one PDF document and one or more PKCS#12 (`.p12`/`.pfx`) certificates.
+- `signers` (required) — a JSON array serialized as a string. Each object references an uploaded certificate by filename and provides its passphrase. Signatures are applied sequentially in order.
 
 ```sh
 curl \
@@ -45,12 +92,10 @@ curl \
   --output signed.pdf
 ```
 
-Exactly one uploaded file must be a PDF document; the rest are the PKCS#12
-certificates referenced by the `signers` array. Signatures are applied
-sequentially in the order given.
+## Error Responses
 
-The endpoint returns the signed PDF with the `application/pdf` content type.
+The API returns standard HTTP status codes. Failures are returned as JSON error responses with a descriptive message.
 
-## 📝 License
+## License
 
-GNU General Public License v3.0 - see [LICENSE](LICENSE.md) for details.
+GNU General Public License v3.0 — see [LICENSE](LICENSE.md) for details.
