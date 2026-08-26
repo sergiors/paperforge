@@ -1,3 +1,4 @@
+import logging
 from http import HTTPStatus
 from pathlib import Path
 
@@ -176,3 +177,20 @@ def test_convert_html_empty_filename(template: bytes):
     # then the conversion fails with an invalid filename error
     with pytest.raises(InvalidFilenameError):
         _convert_html_to_pdf(files)
+
+
+def test_convert_html_unexpected_error(client: TestClient, monkeypatch, caplog):
+    # given a request that triggers an unexpected error
+    def _raise(*args, **kwargs):
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr('app.routers.convert_html._convert_html_to_pdf', _raise)
+
+    # when I send a POST request to /convert/html
+    with caplog.at_level(logging.ERROR):
+        response = _post(client, [('index.html', b'<h1>Hello</h1>')])
+
+    # then the response is a 500 error and the exception is logged
+    assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert response.json() == {'error': 'Internal server error.'}
+    assert 'Unexpected error during HTML-to-PDF conversion' in caplog.text

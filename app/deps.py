@@ -1,9 +1,11 @@
 import hmac
+import logging
 import os
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -22,6 +24,7 @@ def verify_api_key(
         return
 
     if credentials is None or not hmac.compare_digest(credentials.credentials, api_key):
+        logger.warning('Authentication failed: missing or invalid API key')
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail='Invalid API key.',

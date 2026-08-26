@@ -1,6 +1,7 @@
 import json
 import logging
 import tempfile
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -52,17 +53,25 @@ async def convert_html(
 ) -> Response:
     uploaded = [(file.filename or '', await file.read()) for file in files]
 
+    start = time.perf_counter()
     try:
         pdf = _convert_html_to_pdf(uploaded, context)
     except ConversionError as exc:
+        logger.warning('HTML-to-PDF conversion failed: %s', exc)
         return JSONResponse(
             status_code=400,
             content={
                 'error': str(exc),
             },
         )
+    except Exception:
+        logger.exception('Unexpected error during HTML-to-PDF conversion')
+        return JSONResponse(
+            status_code=500,
+            content={'error': 'Internal server error.'},
+        )
 
-    print(pdf)
+    logger.info('Converted HTML to PDF in %.3fs', time.perf_counter() - start)
     return Response(
         content=pdf,
         media_type='application/pdf',
@@ -85,13 +94,15 @@ def _convert_html_to_pdf(
     render_context = _parse_context(context)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
-        root = Path(tmp_dir)
-        index_path = _write_files(files, root)
-
+        index_path = _write_files(files, Path(tmp_dir))
         html = index_path.read_text(encoding='utf-8')
+
         if render_context is not None:
+            logger.info('Rendering HTML template')
             html = _render_template(html, render_context)
             index_path.write_text(html, encoding='utf-8')
+        else:
+            logger.debug('Skipping template rendering (no context)')
 
         return _render_pdf(index_path)
 
@@ -152,6 +163,7 @@ def _render_template(html: str, context: dict) -> str:
 
 
 def _render_pdf(index_path: Path) -> bytes | None:
+    logger.info('Generating PDF')
     fetcher = URLFetcher(fail_on_errors=True)
     try:
         document = HTML(

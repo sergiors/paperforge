@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import time
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -50,16 +51,25 @@ def sign_pdf(
 ) -> Response:
     uploaded = [(file.filename or '', file.file.read()) for file in files]
 
+    start = time.perf_counter()
     try:
         pdf = _sign_pdf(uploaded, signers)
     except SignatureError as exc:
+        logger.warning('PDF signing failed: %s', exc)
         return JSONResponse(
             status_code=400,
             content={
                 'error': str(exc),
             },
         )
+    except Exception:
+        logger.exception('Unexpected error during PDF signing')
+        return JSONResponse(
+            status_code=500,
+            content={'error': 'Internal server error.'},
+        )
 
+    logger.info('Signed PDF in %.3fs', time.perf_counter() - start)
     return Response(content=pdf, media_type='application/pdf')
 
 
@@ -71,6 +81,7 @@ def _sign_pdf(files: list[tuple[str, bytes]], signers_json: str) -> bytes:
     ``signers_json`` array. Signatures are applied sequentially in order.
     """
     parsed_signers = _parse_signers(signers_json)
+    logger.info('Signing PDF with %d signer(s)', len(parsed_signers))
 
     pdf_files = [content for _, content in files if content.startswith(b'%PDF-')]
     if not pdf_files:
@@ -90,6 +101,7 @@ def _sign_pdf(files: list[tuple[str, bytes]], signers_json: str) -> bytes:
                 f'No uploaded file named "{name}" was found.'
             )
 
+        logger.info('Applying signature %d (%s)', index + 1, name)
         pdf = _apply_signature(
             pdf,
             name,

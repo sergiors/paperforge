@@ -3,5 +3,7 @@ services:
     build:
       context: .
     platform: linux/amd64
+    environment:
+      - LOG_LEVEL=DEBUG
     ports:
       - 8000:8000

@@ -1,13 +1,5 @@
 .DS_Store
-.env
-/node_modules/
-/.postgres_data15/
 .coverage
-htmlcov/
-.pytest_cache/
-.ruff_cache/
-.ropeproject/
-paperforge.db
 
 # Python-generated files
 __pycache__/

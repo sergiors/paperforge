@@ -1,4 +1,5 @@
 import io
+import logging
 from http import HTTPStatus
 from pathlib import Path
 
@@ -289,3 +290,20 @@ def test_sign_pdf_multiple_signatures_are_valid(
     statuses = _signature_statuses(response.content)
     assert len(statuses) == 2
     assert all(status.intact and status.valid for status in statuses)
+
+
+def test_sign_pdf_unexpected_error(client: TestClient, monkeypatch, caplog):
+    # given a request that triggers an unexpected error
+    def _raise(*args, **kwargs):
+        raise RuntimeError('boom')
+
+    monkeypatch.setattr('app.routers.sign_pdf._sign_pdf', _raise)
+
+    # when I send a POST request to /pdf/sign
+    with caplog.at_level(logging.ERROR):
+        response = _post(client, [('document.pdf', b'%PDF-1.4')], '[]')
+
+    # then the response is a 500 error and the exception is logged
+    assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+    assert response.json() == {'error': 'Internal server error.'}
+    assert 'Unexpected error during PDF signing' in caplog.text
