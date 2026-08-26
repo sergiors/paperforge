@@ -1,9 +1,12 @@
 services:
-  server:
+  paperforge:
+    # image: ghcr.io/sergiors/paperforge:latest
     build:
       context: .
+    container_name: paperforge
     platform: linux/amd64
     environment:
-      - LOG_LEVEL=DEBUG
+      - LOG_LEVEL=INFO
+      - TZ=Europe/Rome
     ports:
       - 8000:8000

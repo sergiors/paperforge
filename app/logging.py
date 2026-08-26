@@ -1,7 +1,7 @@
 import logging
 import os
 
-LOG_FORMAT = '%(asctime)s | %(levelname)s | %(name)s | %(message)s'
+LOG_FORMAT = '%(levelname)s | %(name)s | %(message)s'
 
 
 def configure_logging() -> None:

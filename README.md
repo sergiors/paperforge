@@ -52,6 +52,7 @@ docker compose up -d
 | Variable  | Description                                                                         |
 | --------- | ----------------------------------------------------------------------------------- |
 | `API_KEY` | Optional API key. When set, requests must include it in the `Authorization` header. |
+| `TZ`      | Optional timezone. Defaults to `UTC`. Any valid IANA timezone identifier (e.g. `Europe/Rome`, `America/Sao_Paulo`, `Asia/Tokyo`). |
 
 Authentication is disabled when `API_KEY` is not configured.
 
