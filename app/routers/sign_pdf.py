@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import time
+from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
@@ -57,7 +58,7 @@ def sign_pdf(
     except SignatureError as exc:
         logger.warning('PDF signing failed: %s', exc)
         return JSONResponse(
-            status_code=400,
+            status_code=HTTPStatus.BAD_REQUEST,
             content={
                 'error': str(exc),
             },
@@ -65,8 +66,10 @@ def sign_pdf(
     except Exception:
         logger.exception('Unexpected error during PDF signing')
         return JSONResponse(
-            status_code=500,
-            content={'error': 'Internal server error.'},
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            content={
+                'error': 'Internal server error.',
+            },
         )
 
     logger.info('Signed PDF in %.3fs', time.perf_counter() - start)

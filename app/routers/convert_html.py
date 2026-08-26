@@ -2,6 +2,7 @@ import json
 import logging
 import tempfile
 import time
+from http import HTTPStatus
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
@@ -59,7 +60,7 @@ async def convert_html(
     except ConversionError as exc:
         logger.warning('HTML-to-PDF conversion failed: %s', exc)
         return JSONResponse(
-            status_code=400,
+            status_code=HTTPStatus.BAD_REQUEST,
             content={
                 'error': str(exc),
             },
@@ -67,7 +68,7 @@ async def convert_html(
     except Exception:
         logger.exception('Unexpected error during HTML-to-PDF conversion')
         return JSONResponse(
-            status_code=500,
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
             content={'error': 'Internal server error.'},
         )
 
