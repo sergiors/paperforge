@@ -17,6 +17,25 @@ Paperforge is a lightweight, self-hosted HTTP API for generating and digitally s
 
 ### Docker
 
+Run the published image from GitHub Container Registry:
+
+```sh
+docker run \
+  -p 8000:8000 \
+  ghcr.io/sergiors/paperforge:latest
+```
+
+With an API key configured:
+
+```sh
+docker run \
+  -p 8000:8000 \
+  -e API_KEY=my-secret-api-key \
+  ghcr.io/sergiors/paperforge:latest
+```
+
+### Build from source
+
 ```sh
 docker build -t paperforge .
 docker run -p 8000:8000 paperforge
