@@ -12,11 +12,14 @@ RUN apk add --no-cache \
     ttf-linux-libertine \
     tzdata
 
-ENV TZ=UTC
+ENV TZ=UTC \
+    PATH="/code/.venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 WORKDIR /code
+
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-cache --no-dev
 
@@ -24,4 +27,4 @@ COPY app ./app
 
 EXPOSE 8000
 
-CMD ["uv", "run", "--no-dev", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
