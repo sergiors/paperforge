@@ -14,7 +14,11 @@ RUN apk add --no-cache \
 
 ENV TZ=UTC \
     PATH="/code/.venv/bin:$PATH" \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    XDG_CACHE_HOME=/tmp/.cache
+
+RUN mkdir -p /tmp/.cache/fontconfig \
+    && chmod -R 1777 /tmp/.cache
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
