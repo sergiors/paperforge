@@ -6,7 +6,8 @@ services:
     container_name: paperforge
     platform: linux/amd64
     environment:
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=DEBUG
       - TZ=Europe/Rome
+      - WORKER_IDLE_TIMEOUT=30
     ports:
       - 8000:8000

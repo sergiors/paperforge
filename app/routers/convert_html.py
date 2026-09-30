@@ -1,16 +1,19 @@
+import asyncio
 import json
 import logging
 import tempfile
 import time
 from http import HTTPStatus
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
 
-from ..deps import verify_api_key
+from ..deps import get_worker_pool, verify_api_key
+from ..worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(verify_api_key)])
@@ -47,14 +50,24 @@ class InvalidFilenameError(ConversionError):
 
 @router.post('/convert/html')
 async def convert_html(
-    files: list[UploadFile] = File(...),
-    context: str | None = Form(None),
+    worker_pool: Annotated[WorkerPool, Depends(get_worker_pool)],
+    files: Annotated[list[UploadFile], File()],
+    context: Annotated[str | None, Form()] = None,
 ) -> Response:
     uploaded = [(file.filename or '', await file.read()) for file in files]
 
     start = time.perf_counter()
+    loop = asyncio.get_running_loop()
     try:
-        pdf = _convert_html_to_pdf(uploaded, context)
+        # Run the conversion (and the process-pool render inside it) in a
+        # worker thread so the event loop is never blocked.
+        pdf = await loop.run_in_executor(
+            None,
+            _convert_html_to_pdf,
+            uploaded,
+            context,
+            worker_pool,
+        )
     except ConversionError as exc:
         logger.warning('HTML-to-PDF conversion failed: %s', exc)
         return JSONResponse(
@@ -79,16 +92,19 @@ async def convert_html(
 
 def _convert_html_to_pdf(
     files: list[tuple[str, bytes]],
-    context: str | None = None,
+    context: str | None,
+    pool: WorkerPool,
 ) -> bytes | None:
     """Convert uploaded HTML files into a PDF document.
 
-    ``files`` is a list of ``(filename, content)`` pairs. Exactly one file must
-    be named ``index.html``; it is the document entry point. Every file is made
-    available to the renderer while preserving its relative path.
+    ``files`` is a list of ``(filename, content)`` pairs. Exactly one file
+    must be named ``index.html``; it is the document entry point. Every file
+    is made available to the renderer while preserving its relative path.
 
     ``context`` is an optional JSON string. When provided, ``index.html`` is
     rendered as a Jinja2 template using the parsed object as its context.
+
+    ``pool`` renders the document in a worker process.
     """
     render_context = _parse_context(context)
 
@@ -103,7 +119,10 @@ def _convert_html_to_pdf(
         else:
             logger.debug('Skipping template rendering (no context)')
 
-        return _render_pdf(index_path)
+        # The temporary directory stays alive until the worker finished
+        # rendering; only the plain path string crosses the process
+        # boundary.
+        return pool.submit(_render_pdf, str(index_path)).result()
 
 
 def _parse_context(context: str | None) -> dict | None:
@@ -161,7 +180,17 @@ def _render_template(html: str, context: dict) -> str:
         raise TemplateRenderError(f'Failed to render template: {exc}') from exc
 
 
-def _render_pdf(index_path: Path) -> bytes | None:
+def _render_pdf(index_path: str) -> bytes | None:
+    """Render the HTML file at ``index_path`` to a PDF document.
+
+    Runs inside a worker process. ``index_path`` is a plain string so only
+    pickle-safe values cross the process boundary. Errors that map to a
+    client error are raised as application-level exceptions and travel back
+    to the parent process with the job result.
+
+    WeasyPrint is imported here, so it is only ever loaded by the workers
+    that actually render; the FastAPI process never imports it.
+    """
     from weasyprint import HTML
     from weasyprint.urls import FatalURLFetchingError, URLFetcher
 
@@ -169,7 +198,7 @@ def _render_pdf(index_path: Path) -> bytes | None:
     fetcher = URLFetcher(fail_on_errors=True)
     try:
         document = HTML(
-            filename=str(index_path),
+            filename=index_path,
             url_fetcher=fetcher,
         )
         return document.write_pdf()

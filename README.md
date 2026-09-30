@@ -5,6 +5,7 @@ Paperforge is a lightweight, self-hosted HTTP API for generating and digitally s
 ## Features
 
 - HTML to PDF conversion
+- Isolated worker pool for rendering and signing (lazy on-demand imports, idle shutdown)
 - Jinja2 template rendering
 - Multiple uploaded assets (CSS, images, fonts, etc.)
 - PDF digital signing
@@ -49,10 +50,12 @@ docker compose up -d
 
 ### Environment variables
 
-| Variable  | Description                                                                         |
-| --------- | ----------------------------------------------------------------------------------- |
-| `API_KEY` | Optional API key. When set, requests must include it in the `Authorization` header. |
-| `TZ`      | Optional timezone. Defaults to `UTC`. Any valid IANA timezone identifier (e.g. `Europe/Rome`, `America/Sao_Paulo`, `Asia/Tokyo`). |
+| Variable              | Description                                                                                                                       |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `API_KEY`             | Optional API key. When set, requests must include it in the `Authorization` header.                                               |
+| `TZ`                  | Optional timezone. Defaults to `UTC`. Any valid IANA timezone identifier (e.g. `Europe/Rome`, `America/Sao_Paulo`, `Asia/Tokyo`). |
+| `WORKER_COUNT`        | Maximum number of worker processes for rendering and signing. Defaults to `2`; must be at least `1`.                              |
+| `WORKER_IDLE_TIMEOUT` | Seconds without pool activity before the worker processes shut down. Defaults to `60`; must be greater than `0`.                 |
 
 Authentication is disabled when `API_KEY` is not configured.
 

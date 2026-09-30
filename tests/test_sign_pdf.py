@@ -1,9 +1,11 @@
 import io
 import logging
+import os
 from http import HTTPStatus
 from pathlib import Path
 
 import pytest
+from app.main import app
 from fastapi.testclient import TestClient
 from pyhanko.pdf_utils.reader import PdfFileReader
 from pyhanko.sign.validation import validate_pdf_signature
@@ -290,6 +292,22 @@ def test_sign_pdf_multiple_signatures_are_valid(
     statuses = _signature_statuses(response.content)
     assert len(statuses) == 2
     assert all(status.intact and status.valid for status in statuses)
+
+
+def test_sign_pdf_runs_in_a_worker_pool(client: TestClient, pdf: bytes, p12: bytes):
+    # given a PDF and a PKCS#12 certificate
+    files = [('document.pdf', pdf), ('company.p12', p12)]
+    signers = '[{"file": "company.p12", "passphrase": "secret"}]'
+
+    # when I send a POST request to /pdf/sign
+    response = _post(client, files, signers)
+
+    # then the signatures were applied by a worker process, not this process
+    assert response.status_code == HTTPStatus.OK
+    pool = app.state.worker_pool.current()
+    assert pool is not None
+    assert pool.is_alive
+    assert pool.submit(os.getpid).result(timeout=30) != os.getpid()
 
 
 def test_sign_pdf_unexpected_error(client: TestClient, monkeypatch, caplog):

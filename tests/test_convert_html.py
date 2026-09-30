@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from app.routers.convert_html import InvalidFilenameError, _convert_html_to_pdf
+from app.worker_pool import WorkerPool
 from fastapi.testclient import TestClient
 
 
@@ -176,7 +177,7 @@ def test_convert_html_empty_filename(template: bytes):
     # when I convert the files to PDF
     # then the conversion fails with an invalid filename error
     with pytest.raises(InvalidFilenameError):
-        _convert_html_to_pdf(files)
+        _convert_html_to_pdf(files, None, WorkerPool())
 
 
 def test_convert_html_unexpected_error(client: TestClient, monkeypatch, caplog):

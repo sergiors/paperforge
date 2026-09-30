@@ -1,16 +1,29 @@
 import hmac
 import logging
 import os
+from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from .worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
+def get_worker_pool(request: Request) -> WorkerPool:
+    """Provide the application's shared worker pool.
+
+    The pool object is created lazily, on the first request that needs it,
+    by the manager on ``app.state``; worker processes only start with the
+    pool's first job.
+    """
+    return request.app.state.worker_pool.get()
+
+
 def verify_api_key(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
 ) -> None:
     """Require a valid API key when the ``API_KEY`` environment variable is set.
 
