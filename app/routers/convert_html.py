@@ -9,8 +9,6 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from fastapi.responses import JSONResponse, Response
 from jinja2 import StrictUndefined, TemplateError
 from jinja2.sandbox import SandboxedEnvironment
-from weasyprint import HTML
-from weasyprint.urls import FatalURLFetchingError, URLFetcher
 
 from ..deps import verify_api_key
 
@@ -164,6 +162,9 @@ def _render_template(html: str, context: dict) -> str:
 
 
 def _render_pdf(index_path: Path) -> bytes | None:
+    from weasyprint import HTML
+    from weasyprint.urls import FatalURLFetchingError, URLFetcher
+
     logger.info('Generating PDF')
     fetcher = URLFetcher(fail_on_errors=True)
     try:
