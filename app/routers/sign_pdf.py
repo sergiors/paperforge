@@ -28,7 +28,11 @@ class MultiplePdfError(SignatureError):
 
 
 class InvalidSignersError(SignatureError):
-    """The ``signers`` field is not valid JSON or has an invalid shape."""
+    """The signers field is invalid."""
+
+
+class InvalidStampError(SignatureError):
+    """The stamp field is invalid or cannot be applied."""
 
 
 class CertificateNotFoundError(SignatureError):
@@ -48,12 +52,13 @@ def sign_pdf(
     worker_pool: Annotated[WorkerPool, Depends(get_worker_pool)],
     files: list[UploadFile] = File(...),
     signers: str = Form(...),
+    stamp: str = Form(''),
 ) -> Response:
     uploaded = [(file.filename or '', file.file.read()) for file in files]
 
     start = time.perf_counter()
     try:
-        pdf = _sign_pdf(uploaded, signers, worker_pool)
+        pdf = _sign_pdf(uploaded, signers, worker_pool, stamp)
     except SignatureError as exc:
         logger.warning('PDF signing failed: %s', exc)
         return JSONResponse(
@@ -79,6 +84,7 @@ def _sign_pdf(
     files: list[tuple[str, bytes]],
     signers_json: str,
     pool: WorkerPool,
+    stamp_json: str = '',
 ) -> bytes:
     """Sign an uploaded PDF with the uploaded PKCS#12 certificates.
 
@@ -86,14 +92,17 @@ def _sign_pdf(
     be a PDF document; the rest are the PKCS#12 certificates referenced by the
     ``signers_json`` array. Signatures are applied sequentially in order.
 
-    ``pool`` applies the signatures in a worker process: parsing and
+    ``pool`` applies the stamp and signatures in a worker process: parsing and
     validation run here, so malformed requests fail fast without starting
     the pool.
     """
     parsed_signers = _parse_signers(signers_json)
+    stamp = _parse_stamp(stamp_json)
+
     logger.info('Signing PDF with %d signer(s)', len(parsed_signers))
 
     pdf_files = [content for _, content in files if content.startswith(b'%PDF-')]
+
     if not pdf_files:
         raise NoPdfError('No PDF file was uploaded.')
 
@@ -114,7 +123,7 @@ def _sign_pdf(
 
         jobs.append((name, file_map[name], signer['passphrase']))
 
-    return pool.submit(_apply_signatures, pdf, jobs).result()
+    return pool.submit(_apply_signatures, pdf, jobs, stamp).result()
 
 
 def _parse_signers(signers_json: str) -> list[dict]:
@@ -145,6 +154,121 @@ def _parse_signers(signers_json: str) -> list[dict]:
         result.append({'file': file, 'passphrase': passphrase})
 
     return result
+
+
+def _parse_stamp(stamp_json: str) -> dict | None:
+    if not stamp_json.strip():
+        return None
+
+    try:
+        parsed = json.loads(stamp_json)
+    except json.JSONDecodeError as exc:
+        raise InvalidStampError(f'Invalid JSON in "stamp": {exc}') from exc
+
+    if not isinstance(parsed, dict):
+        raise InvalidStampError('"stamp" must be a JSON object.')
+
+    anchor = parsed.get('anchor')
+    text = parsed.get('text')
+
+    if not isinstance(anchor, str) or not anchor.strip():
+        raise InvalidStampError('The stamp must have a non-empty "anchor" string.')
+
+    if not isinstance(text, str) or not text.strip():
+        raise InvalidStampError('The stamp must have a non-empty "text" string.')
+
+    return {'anchor': anchor, 'text': text}
+
+
+def _apply_stamp(pdf: bytes, stamp: dict) -> bytes:
+    import pymupdf
+    from pyhanko.pdf_utils.misc import PdfReadError
+    from pyhanko.pdf_utils.reader import PdfFileReader
+
+    try:
+        embedded_signatures = PdfFileReader(io.BytesIO(pdf)).embedded_signatures
+    except (PdfReadError, ValueError) as exc:
+        raise InvalidStampError(f'Failed to read PDF for stamping: {exc}') from exc
+
+    if embedded_signatures:
+        raise InvalidStampError('Cannot stamp an already signed PDF.')
+
+    try:
+        document = pymupdf.open(stream=pdf, filetype='pdf')
+    except (pymupdf.FileDataError, RuntimeError, ValueError) as exc:
+        raise InvalidStampError(f'Failed to read PDF for stamping: {exc}') from exc
+
+    anchor = stamp['anchor']
+    text = stamp['text']
+
+    with document:
+        if document.is_encrypted or document.needs_pass:
+            raise InvalidStampError('Cannot stamp an encrypted PDF.')
+
+        try:
+            matches = [
+                (page, rect) for page in document for rect in page.search_for(anchor)
+            ]
+
+            if not matches:
+                raise InvalidStampError(f'Anchor "{anchor}" not found.')
+
+            if len(matches) > 1:
+                raise InvalidStampError(f'Anchor "{anchor}" is ambiguous.')
+
+            page, rect = matches[0]
+            fontsize = 8
+            lines = text.splitlines()
+
+            width = (
+                max(
+                    pymupdf.get_text_length(
+                        line,
+                        fontname='helv',
+                        fontsize=fontsize,
+                    )
+                    for line in lines
+                )
+                + 2
+            )
+
+            height = fontsize * (len(lines) + 1.5)
+            center = (rect.x0 + rect.x1) / 2
+
+            box = pymupdf.Rect(
+                center - width / 2,
+                rect.y1 - height,
+                center + width / 2,
+                rect.y1,
+            )
+
+            if (box * page.rotation_matrix) not in page.rect:
+                raise InvalidStampError(f'Stamp "{anchor}" exceeds page bounds.')
+
+            page.add_redact_annot(
+                rect,
+                fill=False,  # type: ignore  # False disables fill.
+                cross_out=False,
+            )
+            page.apply_redactions(images=0, graphics=0)
+
+            remaining = page.insert_textbox(
+                box,
+                text,
+                fontname='helv',
+                fontsize=fontsize,
+                color=(0, 0, 0),
+                align=pymupdf.TEXT_ALIGN_CENTER,
+            )
+
+            if remaining < 0:
+                raise InvalidStampError(f'Stamp "{anchor}" does not fit.')
+
+            logger.info('Applied stamp "%s"', anchor)
+
+            return document.tobytes(garbage=4, deflate=True)
+        except (pymupdf.FileDataError, RuntimeError, ValueError) as exc:
+            raise InvalidStampError(f'Failed to apply stamp: {exc}') from exc
 
 
 def _apply_signature(
@@ -185,8 +309,12 @@ def _apply_signature(
     return output.getvalue()
 
 
-def _apply_signatures(pdf: bytes, jobs: list[tuple[str, bytes, str]]) -> bytes:
-    """Apply the signatures to ``pdf`` in order.
+def _apply_signatures(
+    pdf: bytes,
+    jobs: list[tuple[str, bytes, str]],
+    stamp: dict | None = None,
+) -> bytes:
+    """Apply the optional stamp and then signatures to ``pdf`` in order.
 
     Runs inside a worker process. ``jobs`` is a list of
     ``(cert_name, cert, passphrase)`` triples, so only pickle-safe values
@@ -194,10 +322,12 @@ def _apply_signatures(pdf: bytes, jobs: list[tuple[str, bytes, str]]) -> bytes:
     raised as application-level exceptions and travel back to the parent
     process with the job result.
 
-    pyhanko is imported per signature (see :func:`_apply_signature`), so it
-    is only ever loaded by the workers that actually sign; the FastAPI
-    process never imports it.
+    pyHanko and PyMuPDF are imported inside the worker task functions, so
+    they are not loaded by FastAPI.
     """
+    if stamp:
+        pdf = _apply_stamp(pdf, stamp)
+
     for index, (name, cert, passphrase) in enumerate(jobs):
         logger.info('Applying signature %d (%s)', index + 1, name)
         pdf = _apply_signature(

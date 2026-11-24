@@ -1,9 +1,11 @@
 import io
+import json
 import logging
 import os
 from http import HTTPStatus
 from pathlib import Path
 
+import pymupdf
 import pytest
 from app.main import app
 from fastapi.testclient import TestClient
@@ -24,11 +26,33 @@ def pdf() -> bytes:
     return (Path(__file__).parent / 'samples/document.pdf').read_bytes()
 
 
-def _post(client: TestClient, files: list[tuple[str, bytes]], signers: str):
+@pytest.fixture
+def signer() -> str:
+    return '[{"file": "company.p12", "passphrase": "secret"}]'
+
+
+@pytest.fixture
+def two_signers() -> str:
+    return (
+        '[{"file": "company.p12", "passphrase": "secret"},'
+        ' {"file": "manager.p12", "passphrase": "secret"}]'
+    )
+
+
+def _post(
+    client: TestClient,
+    files: list[tuple[str, bytes]],
+    signers: str,
+    stamp: str | None = None,
+):
+    data = {'signers': signers}
+    if stamp is not None:
+        data['stamp'] = stamp
+
     return client.post(
         '/pdf/sign',
         files=[('files', (name, content)) for name, content in files],
-        data={'signers': signers},
+        data=data,
     )
 
 
@@ -325,3 +349,133 @@ def test_sign_pdf_unexpected_error(client: TestClient, monkeypatch, caplog):
     assert response.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
     assert response.json() == {'error': 'Internal server error.'}
     assert 'Unexpected error during PDF signing' in caplog.text
+
+
+@pytest.fixture
+def stamp_pdf() -> bytes:
+    document = pymupdf.open()
+    page = document.new_page(width=595, height=842)
+    page.insert_text((72, 150), '{{signature}}')
+    page.insert_text((72, 450), '{{repeat}}')
+    page.insert_text((72, 500), '{{repeat}}')
+    pdf = document.tobytes()
+    document.close()
+    return pdf
+
+
+def _text(pdf: bytes) -> str:
+    with pymupdf.open(stream=pdf, filetype='pdf') as document:
+        return ''.join(page.get_text() for page in document)
+
+
+def test_sign_pdf_replaces_text_stamp_before_signing(
+    client: TestClient, stamp_pdf: bytes, p12: bytes, signer: str
+):
+    files = [('document.pdf', stamp_pdf), ('company.p12', p12)]
+    stamp = json.dumps({'anchor': '{{signature}}', 'text': 'Alice Smith\nDirector'})
+
+    response = _post(client, files, signer, stamp)
+
+    assert response.status_code == HTTPStatus.OK
+    text = _text(response.content)
+    assert '{{signature}}' not in text
+    assert 'Alice Smith' in text
+    assert 'Director' in text
+    with pymupdf.open(stream=response.content, filetype='pdf') as document:
+        assert document[0].search_for('Alice Smith')
+
+    statuses = _signature_statuses(response.content)
+    assert len(statuses) == 1
+    assert statuses[0].intact and statuses[0].valid
+
+    pool = app.state.worker_pool.current()
+    assert pool is not None
+    assert pool.submit(os.getpid).result(timeout=30) != os.getpid()
+
+
+def test_sign_pdf_multiple_signatures_after_stamping(
+    client: TestClient, stamp_pdf: bytes, p12: bytes, two_signers: str
+):
+    files = [
+        ('document.pdf', stamp_pdf),
+        ('company.p12', p12),
+        ('manager.p12', p12),
+    ]
+    stamp = json.dumps({'anchor': '{{signature}}', 'text': 'Alice'})
+
+    response = _post(client, files, two_signers, stamp)
+
+    assert response.status_code == HTTPStatus.OK
+    statuses = _signature_statuses(response.content)
+    assert len(statuses) == 2
+    assert all(status.intact and status.valid for status in statuses)
+    assert '{{signature}}' not in _text(response.content)
+
+
+@pytest.mark.parametrize(
+    'stamp',
+    [
+        '{not valid json',
+        '[]',
+        json.dumps({'anchor': '', 'text': 'Alice'}),
+        json.dumps({'anchor': '{{signature}}', 'text': ''}),
+        json.dumps({'anchor': '{{missing}}', 'text': 'Alice'}),
+        json.dumps({'anchor': '{{repeat}}', 'text': 'Alice'}),
+    ],
+)
+def test_sign_pdf_rejects_invalid_or_ambiguous_stamp(
+    client: TestClient, stamp_pdf: bytes, p12: bytes, signer: str, stamp: str
+):
+    files = [('document.pdf', stamp_pdf), ('company.p12', p12)]
+
+    response = _post(client, files, signer, stamp)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert not response.content.startswith(b'%PDF-')
+
+
+def test_sign_pdf_rejects_overflow_and_stamping_signed_documents(
+    client: TestClient, stamp_pdf: bytes, p12: bytes, signer: str
+):
+    files = [('document.pdf', stamp_pdf), ('company.p12', p12)]
+    overflow = json.dumps({'anchor': '{{signature}}', 'text': 'Too long ' * 1000})
+
+    response = _post(client, files, signer, overflow)
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+
+    signed = _post(client, files, signer)
+    assert signed.status_code == HTTPStatus.OK
+    signed_files = [('signed.pdf', signed.content), ('company.p12', p12)]
+    stamp = json.dumps({'anchor': '{{repeat}}', 'text': '2026-01-15'})
+
+    response = _post(client, signed_files, signer, stamp)
+    assert response.status_code == HTTPStatus.BAD_REQUEST
+    assert not response.content.startswith(b'%PDF-')
+
+
+def test_sign_pdf_empty_stamp_is_a_no_op(
+    client: TestClient, stamp_pdf: bytes, p12: bytes, signer: str
+):
+    files = [('document.pdf', stamp_pdf), ('company.p12', p12)]
+
+    response = _post(client, files, signer, '')
+
+    assert response.status_code == HTTPStatus.OK
+    assert '{{signature}}' in _text(response.content)
+
+
+def test_sign_pdf_rejects_encrypted_pdf_with_empty_user_password(
+    client: TestClient, stamp_pdf: bytes, p12: bytes, signer: str
+):
+    with pymupdf.open(stream=stamp_pdf, filetype='pdf') as document:
+        encrypted = document.tobytes(
+            encryption=getattr(pymupdf, 'PDF_ENCRYPT_AES_256'),
+            user_pw='',
+            owner_pw='secret',
+        )
+
+    files = [('document.pdf', encrypted), ('company.p12', p12)]
+    stamp = json.dumps({'anchor': '{{signature}}', 'text': 'Alice Smith'})
+    response = _post(client, files, signer, stamp)
+
+    assert response.status_code == HTTPStatus.BAD_REQUEST

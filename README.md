@@ -10,6 +10,7 @@ Paperforge is a lightweight, self-hosted HTTP API for generating and digitally s
 - Multiple uploaded assets (CSS, images, fonts, etc.)
 - PDF digital signing
 - Multiple sequential signatures
+- Optional single text stamp to replace an anchor placeholder
 - Simple HTTP API
 - Docker-friendly
 - Optional API key authentication
@@ -105,6 +106,7 @@ The request is `multipart/form-data` with the following fields:
 
 - `files` (required) — exactly one PDF document and one or more PKCS#12 (`.p12`/`.pfx`) certificates.
 - `signers` (required) — a JSON array serialized as a string. Each object references an uploaded certificate by filename and provides its passphrase. Signatures are applied sequentially in order.
+- `stamp` (optional) — a JSON object serialized as a string, with non-empty `anchor` and `text` strings. The anchor must occur exactly once in the PDF. The placeholder is replaced with the provided text before signing. Text is centered at the anchor in 8-point black Helvetica, supports multiple lines, and has no background, border, or icon. The document author is responsible for reserving enough space.
 
 ```sh
 curl \
@@ -113,8 +115,13 @@ curl \
   --form files=@document.pdf \
   --form files=@company.p12 \
   --form 'signers=[{"file":"company.p12","passphrase":"secret"}]' \
+  --form 'stamp={"anchor":"SIGN HERE","text":"Signed by Alice\nDirector"}' \
   --output signed.pdf
 ```
+
+A `400` response is returned for invalid stamp JSON or shape, a missing or
+ambiguous anchor, text that does not fit, or a signed, encrypted, or unreadable
+PDF.
 
 ## Error Responses
 
