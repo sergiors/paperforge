@@ -1,16 +1,18 @@
-FROM python:3.14-alpine
+FROM python:3.14-slim
 
-RUN apk add --no-cache \
-    so:libgobject-2.0.so.0 \
-    so:libpango-1.0.so.0 \
-    so:libharfbuzz.so.0 \
-    so:libharfbuzz-subset.so.0 \
-    so:libfontconfig.so.1 \
-    so:libpangoft2-1.0.so.0 \
-    font-liberation \
-    font-liberation-sans-narrow \
-    ttf-linux-libertine \
-    tzdata
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libgobject-2.0-0 \
+        libpango-1.0-0 \
+        libharfbuzz0b \
+        libharfbuzz-subset0 \
+        libfontconfig1 \
+        libpangoft2-1.0-0 \
+        fonts-liberation \
+        fonts-liberation-sans-narrow \
+        fonts-linuxlibertine \
+        tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 ENV TZ=UTC \
     PATH="/code/.venv/bin:$PATH" \
